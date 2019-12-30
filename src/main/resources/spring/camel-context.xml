@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+       http://camel.apache.org/schema/spring       http://camel.apache.org/schema/spring/camel-spring.xsd">
+
+    <!-- You could also define a traditional camel context here -->
+
+    <camelContext xmlns="http://camel.apache.org/schema/spring" >
+        <route  id="client">
+            <from uri="timer:timerTest?period=4000&amp;repeatCount=4"/>
+            <choice>
+                <when>
+                    <simple>${exchangeProperty.CamelTimerCounter} == "2"</simple>
+                    <setBody>
+                        <constant>delay</constant>
+                    </setBody>
+                </when>
+                <otherwise>
+                    <setBody>
+                        <constant>Regular</constant>
+                    </setBody>
+                </otherwise>
+            </choice>
+            <to uri="netty4:tcp://localhost:8082?requestTimeout=10000&amp;producerPoolMaxActive=4"/>
+            <log message=">>>> Response from the netty service ${body} for iteration ${exchangeProperty.CamelTimerCounter}"/>
+        </route>
+
+        <route id="server">
+            <from uri="netty4:tcp://localhost:8082"/>
+            <log message="Got a message >> ${body}"/>
+            <choice>
+                <when>
+                    <simple>${body} == "delay"</simple>
+                    <log message="In delay"/>
+                    <delay asyncDelayed="true">
+                        <constant>500000000000</constant>
+                    </delay>
+                </when>
+                <otherwise>
+                    <log message="Not delayed"/>
+                    <setBody>
+                        <constant>Success</constant>
+                    </setBody>
+                </otherwise>
+            </choice>
+        </route>
+        <route id="check-inflight">
+            <from uri="timer:inflightChecker?delay=20000&amp;period=5000&amp;repeatCount=5"/>
+            <to uri="undertow:http://localhost:8081/camel/routes/client/detail"/>
+            <log message="${body}"/>
+        </route>
+    </camelContext>
+
+
+    <bean id="defaultShutdownStrategy"
+          class="org.apache.camel.impl.DefaultShutdownStrategy">
+        <property name="timeout" value="2"/>
+        <property name="suppressLoggingOnTimeout" value="false"/>
+        <property name="shutdownNowOnTimeout" value="true"/>
+    </bean>
+</beans>
